@@ -2,6 +2,7 @@
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, BooleanType
 import pyspark.sql.functions as F
 from delta.tables import DeltaTable
+from pyspark.sql.functions import when, col, regexp_replace
 
 # COMMAND ----------
 
@@ -18,9 +19,67 @@ print(catalog_name, storage_account_name, container_name)
 
 # COMMAND ----------
 
-df = spark.readStream \
-    .format('delta') \
-    .table(f'{catalog_name}.bronze.brz_order_items')
+def read_bronze_table(table_name):
+    return (
+        spark.readStream \
+        .format('delta') \
+        .table(f'{catalog_name}.bronze.brz_{table_name}')
+    )
+
+# COMMAND ----------
+
+def clean_order_items(df):
+    df = df.dropDuplicates(['order_id', 'item_seq'])
+
+
+    df = df.withColumn(
+        'quantity',
+        when(F.col('quantity') == 'Two', 2).otherwise(F.col('quantity').cast('int'))
+    )
+    df = df.withColumn(
+        'unit_price',
+        F.regexp_replace(F.col('unit_price'), "[$]", "").cast("double")
+    )
+
+    df = df.withColumn(
+        "discount_pct",
+        F.regexp_replace("discount_pct", "%", "").cast("double")
+    )
+
+    # Transformation : coupon code processing (convert to lower)
+    df = df.withColumn(
+        "coupon_code", F.lower(F.trim(F.col("coupon_code")))
+    )
+
+    # Transformation : channel processing 
+    df = df.withColumn(
+        "channel",
+        F.when(F.col("channel") == "web", "Website")
+        .when(F.col("channel") == "app", "Mobile")
+        .otherwise(F.col("channel")),
+    )
+
+    #Transformation : Add processed time 
+    df = df.withColumn(
+        "processed_time", F.current_timestamp()
+    )
+    
+    return df
+
+# COMMAND ----------
+
+def upsert_to_silver(df):
+    pass
+
+# COMMAND ----------
+
+def upsert_wrapper(table_name):
+    pass 
+
+# COMMAND ----------
+
+df = read_bronze_table('order_items')
+df = clean_order_items(df)
 
 
 # COMMAND ----------
@@ -32,40 +91,40 @@ df = spark.readStream \
 # COMMAND ----------
 
 # DBTITLE 1,Cell 6
-df = df.dropDuplicates(['order_id', 'item_seq'])
+# df = df.dropDuplicates(['order_id', 'item_seq'])
 
-from pyspark.sql.functions import when, col, regexp_replace
-df = df.withColumn(
-    'quantity',
-    when(F.col('quantity') == 'Two', 2).otherwise(F.col('quantity').cast('int'))
-)
-df = df.withColumn(
-    'unit_price',
-    F.regexp_replace(F.col('unit_price'), "[$]", "").cast("double")
-)
+# from pyspark.sql.functions import when, col, regexp_replace
+# df = df.withColumn(
+#     'quantity',
+#     when(F.col('quantity') == 'Two', 2).otherwise(F.col('quantity').cast('int'))
+# )
+# df = df.withColumn(
+#     'unit_price',
+#     F.regexp_replace(F.col('unit_price'), "[$]", "").cast("double")
+# )
 
-df = df.withColumn(
-    "discount_pct",
-    F.regexp_replace("discount_pct", "%", "").cast("double")
-)
+# df = df.withColumn(
+#     "discount_pct",
+#     F.regexp_replace("discount_pct", "%", "").cast("double")
+# )
 
-# Transformation : coupon code processing (convert to lower)
-df = df.withColumn(
-    "coupon_code", F.lower(F.trim(F.col("coupon_code")))
-)
+# # Transformation : coupon code processing (convert to lower)
+# df = df.withColumn(
+#     "coupon_code", F.lower(F.trim(F.col("coupon_code")))
+# )
 
-# Transformation : channel processing 
-df = df.withColumn(
-    "channel",
-    F.when(F.col("channel") == "web", "Website")
-    .when(F.col("channel") == "app", "Mobile")
-    .otherwise(F.col("channel")),
-)
+# # Transformation : channel processing 
+# df = df.withColumn(
+#     "channel",
+#     F.when(F.col("channel") == "web", "Website")
+#     .when(F.col("channel") == "app", "Mobile")
+#     .otherwise(F.col("channel")),
+# )
 
-#Transformation : Add processed time 
-df = df.withColumn(
-    "processed_time", F.current_timestamp()
-)
+# #Transformation : Add processed time 
+# df = df.withColumn(
+#     "processed_time", F.current_timestamp()
+# )
 
 # COMMAND ----------
 

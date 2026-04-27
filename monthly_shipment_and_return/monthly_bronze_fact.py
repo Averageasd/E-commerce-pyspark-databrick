@@ -21,11 +21,6 @@ dbutils.widgets.get('storage_account_name')
 
 # COMMAND ----------
 
-# use autoloader using cloudFiles
-# schemaLocation to look at checkpoint locations. will not need to load all data again. 
-# rescue. it will not reject data with different schema, it will accept it and put it in a json column.
-# includeExistingFiles: include all files not just latest ones
-# availableNow=True run right now and terminate. 
 def read_data_from_landing_to_bronze(bronze_table_name):
     print(catalog_name, storage_account_name, container_name)
     adls_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{bronze_table_name}/landing/'
@@ -53,15 +48,13 @@ def read_data_from_landing_to_bronze(bronze_table_name):
 
 # COMMAND ----------
 
-read_data_from_landing_to_bronze('order_items')
-
-
-# COMMAND ----------
-
-display(spark.sql(f'SELECT max(dt) FROM {catalog_name}.bronze.brz_order_items'))
+read_data_from_landing_to_bronze('order_returns')
+read_data_from_landing_to_bronze('order_shipments')
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC
-# MAGIC SELECT COUNT(*) FROM cloud_files_state("abfss://ecommerce-raw-data@ngdbrstorage9497.dfs.core.windows.net/checkpoint/bronze/fact_order_items/")
+display(spark.sql(f'SELECT max(order_dt) FROM {catalog_name}.bronze.brz_order_returns'))
+
+# COMMAND ----------
+
+display(spark.sql(f'SELECT max(order_dt) FROM {catalog_name}.bronze.brz_order_shipments'))
