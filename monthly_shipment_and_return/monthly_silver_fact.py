@@ -19,6 +19,12 @@ print(catalog_name, storage_account_name, container_name)
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC
+# MAGIC SELECT min(return_ts) FROM ecommerce.bronze.brz_order_returns
+
+# COMMAND ----------
+
 def read_bronze_table(table_name):
     return (
         spark.readStream \
@@ -54,40 +60,28 @@ def clean_shipment_returns(df):
 
 # COMMAND ----------
 
-def upsert_silver_wrapper(table_name_arg):
-    def upsert_to_silver(microBatchDF, batchId):
-        table_name = f'{catalog_name}.silver.{table_name_arg}'
-        if not spark.catalog.tableExists(table_name):
-            print("creating new table")
-            microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
-            # change data feed, capture what happens to each data row. 
-            # gold layer later only reads the data feed instead of scanning the whole table again
-            spark.sql(
-                f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
-            )
-        else:
-            # in-mem silver table we want to write into
-            # we then merge each microbatch dataframe into this table
-            deltaTable = DeltaTable.forName(spark, table_name)
-            if (table_name_arg == 'slv_order_returns'):
-                deltaTable.alias('silver_table').merge(
-                microBatchDF.alias('batch_table'), 
-                'silver_table.order_id = batch_table.order_id '
-                ) \
-                .whenMatchedUpdateAll() \
-                .whenNotMatchedInsertAll() \
-                .execute()
-            elif (table_name_arg == 'slv_order_shipments'):
-                deltaTable.alias('silver_table').merge(
-                microBatchDF.alias('batch_table'), 
-                'silver_table.shipment_id = batch_table.shipment_id '
-                ) \
-                .whenMatchedUpdateAll() \
-                .whenNotMatchedInsertAll() \
-                .execute()
 
-            
-    return upsert_to_silver
+def upsert_order_returns_to_silver(microBatchDF, batchId):
+    table_name = f'{catalog_name}.silver.slv_order_returns'
+    if not spark.catalog.tableExists(table_name):
+        print("creating new table")
+        microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
+        # change data feed, capture what happens to each data row. 
+        # gold layer later only reads the data feed instead of scanning the whole table again
+        spark.sql(
+            f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
+        )
+    else:
+        # in-mem silver table we want to write into
+        # we then merge each microbatch dataframe into this table
+        deltaTable = DeltaTable.forName(spark, table_name)
+        deltaTable.alias('silver_table').merge(
+            microBatchDF.alias('batch_table'), 
+            'silver_table.order_id = batch_table.order_id'
+        ) \
+        .whenMatchedUpdateAll() \
+        .whenNotMatchedInsertAll() \
+        .execute()
         
 
 # COMMAND ----------
@@ -103,7 +97,7 @@ print(df)
 
 silver_checkpoint_path = f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/checkpoint/silver/fact_order_returns/"
 df.writeStream.trigger(availableNow=True).foreachBatch(
-    upsert_silver_wrapper("slv_order_returns")
+    upsert_order_returns_to_silver
 ).format("delta").option("checkpointLocation", silver_checkpoint_path).option(
     "mergeSchema", "true"
 ).outputMode(
@@ -119,9 +113,33 @@ df = clean_shipment_returns(df)
 
 # COMMAND ----------
 
+def upsert_order_shipments_to_silver(microBatchDF, batchId):
+    table_name = f'{catalog_name}.silver.slv_order_shipments'
+    if not spark.catalog.tableExists(table_name):
+        print("creating new table")
+        microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
+        # change data feed, capture what happens to each data row. 
+        # gold layer later only reads the data feed instead of scanning the whole table again
+        spark.sql(
+            f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
+        )
+    else:
+        # in-mem silver table we want to write into
+        # we then merge each microbatch dataframe into this table
+        deltaTable = DeltaTable.forName(spark, table_name)
+        deltaTable.alias('silver_table').merge(
+            microBatchDF.alias('batch_table'), 
+            'silver_table.order_id = batch_table.order_id AND silver_table.shipment_id = batch_table.shipment_id'
+        ) \
+        .whenMatchedUpdateAll() \
+        .whenNotMatchedInsertAll() \
+        .execute()
+
+# COMMAND ----------
+
 silver_checkpoint_path = f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/checkpoint/silver/fact_order_shipments/"
 df.writeStream.trigger(availableNow=True).foreachBatch(
-    upsert_silver_wrapper("slv_order_shipments")
+    upsert_order_shipments_to_silver
 ).format("delta").option("checkpointLocation", silver_checkpoint_path).option(
     "mergeSchema", "true"
 ).outputMode(
@@ -141,3 +159,14 @@ df.writeStream.trigger(availableNow=True).foreachBatch(
 # MAGIC %sql
 # MAGIC
 # MAGIC SELECT * FROM ecommerce.silver.slv_order_returns LIMIT 10
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC SELECT min(return_ts) FROM ecommerce.silver.slv_order_returns
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT min(order_dt) FROM ecommerce.silver.slv_order_shipments

@@ -41,40 +41,53 @@ def enhance_order_shipments(df):
 
 # COMMAND ----------
 
-def upsert_gold_wrapper(table_name_arg):
-    def upsert_to_gold(microBatchDF, batchId):
-        table_name = f'{catalog_name}.gold.{table_name_arg}'
-        if not spark.catalog.tableExists(table_name):
-            print("creating new table")
-            microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
-            # change data feed, capture what happens to each data row. 
-            # gold layer later only reads the data feed instead of scanning the whole table again
-            spark.sql(
-                f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
-            )
-        else:
-            # in-mem silver table we want to write into
-            # we then merge each microbatch dataframe into this table
-            deltaTable = DeltaTable.forName(spark, table_name)
-            if (table_name_arg == 'gld_order_returns'):
-                deltaTable.alias('gold_table').merge(
-                microBatchDF.alias('batch_table'), 
-                'gold_table.order_id = batch_table.order_id '
-                ) \
-                .whenMatchedUpdateAll() \
-                .whenNotMatchedInsertAll() \
-                .execute()
-            elif (table_name_arg == 'gld_order_shipments'):
-                deltaTable.alias('gold_table').merge(
-                microBatchDF.alias('batch_table'), 
-                'gold_table.shipment_id = batch_table.shipment_id '
-                ) \
-                .whenMatchedUpdateAll() \
-                .whenNotMatchedInsertAll() \
-                .execute()
 
+def upsert_order_returns_to_gold(microBatchDF, batchId):
+    table_name = f'{catalog_name}.gold.gld_order_returns'
+    if not spark.catalog.tableExists(table_name):
+        print("creating new table")
+        microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
+        # change data feed, capture what happens to each data row. 
+        # gold layer later only reads the data feed instead of scanning the whole table again
+        spark.sql(
+            f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
+        )
+    else:
+        # in-mem silver table we want to write into
+        # we then merge each microbatch dataframe into this table
+        deltaTable = DeltaTable.forName(spark, table_name)
+        deltaTable.alias('gold_table').merge(
+        microBatchDF.alias('batch_table'), 
+        'gold_table.order_id = batch_table.order_id '
+        ) \
+        .whenMatchedUpdateAll() \
+        .whenNotMatchedInsertAll() \
+        .execute()
+
+# COMMAND ----------
+
+def upsert_order_shipments_to_gold(microBatchDF, batchId):
+    table_name = f'{catalog_name}.gold.gld_order_shipments'
+    if not spark.catalog.tableExists(table_name):
+        print("creating new table")
+        microBatchDF.write.format('delta').mode('overwrite').saveAsTable(table_name)
+        # change data feed, capture what happens to each data row. 
+        # gold layer later only reads the data feed instead of scanning the whole table again
+        spark.sql(
+            f'ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)'
+        )
+    else:
+        # in-mem silver table we want to write into
+        # we then merge each microbatch dataframe into this table
+        deltaTable = DeltaTable.forName(spark, table_name)
+        deltaTable.alias('gold_table').merge(
+        microBatchDF.alias('batch_table'), 
+        'gold_table.shipment_id = batch_table.shipment_id AND gold_table.order_id = batch_table.order_id'
+        ) \
+        .whenMatchedUpdateAll() \
+        .whenNotMatchedInsertAll() \
+        .execute()
             
-    return upsert_to_gold
 
 # COMMAND ----------
 
@@ -87,7 +100,7 @@ df = df.drop("_change_type", "_commit_version", "_commit_timestamp")
 # COMMAND ----------
 
 df.writeStream.trigger(availableNow=True).foreachBatch(
-    upsert_gold_wrapper("gld_order_returns")
+    upsert_order_returns_to_gold
 ).format("delta").option("checkpointLocation", gold_checkpoint_path).option(
     "overwriteSchema", "true"
 ).outputMode(
@@ -106,7 +119,7 @@ df = df.drop("_change_type", "_commit_version", "_commit_timestamp")
 # COMMAND ----------
 
 df.writeStream.trigger(availableNow=True).foreachBatch(
-    upsert_gold_wrapper("gld_order_shipments")
+    upsert_order_shipments_to_gold
 ).format("delta").option("checkpointLocation", gold_checkpoint_path).option(
     "overwriteSchema", "true"
 ).outputMode(

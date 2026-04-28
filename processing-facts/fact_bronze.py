@@ -58,7 +58,11 @@ read_data_from_landing_to_bronze('order_items')
 
 # COMMAND ----------
 
-display(spark.sql(f'SELECT max(dt) FROM {catalog_name}.bronze.brz_order_items'))
+display(spark.sql(f'SELECT min(dt) FROM {catalog_name}.bronze.brz_order_items'))
+
+# COMMAND ----------
+
+display(spark.sql(f'SELECT min(return_ts) FROM {catalog_name}.bronze.brz_order_returns'))
 
 # COMMAND ----------
 

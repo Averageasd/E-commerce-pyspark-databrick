@@ -21,40 +21,66 @@ dbutils.widgets.get('storage_account_name')
 
 # COMMAND ----------
 
-def read_data_from_landing_to_bronze(bronze_table_name):
-    print(catalog_name, storage_account_name, container_name)
-    adls_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{bronze_table_name}/landing/'
-    bronze_checkpoint_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/checkpoint/bronze/fact_{bronze_table_name}/'
-    print(adls_path, bronze_checkpoint_path)
-    spark.readStream \
-    .format("cloudFiles") \
-    .option("cloudFiles.format", "csv")  \
-    .option("cloudFiles.schemaLocation", bronze_checkpoint_path) \
-    .option("cloudFiles.schemaEvolutionMode", "rescue") \
-    .option("header", "true") \
-    .option("cloudFiles.inferColumnTypes", "true") \
-    .option("rescuedDataColumn", "_rescued_data") \
-    .option("cloudFiles.includeExistingFiles", "true")  \
-    .option("pathGlobFilter", "*.csv") \
-    .load(adls_path) \
-    .withColumn("ingest_timestamp", F.current_timestamp()) \
-    .withColumn("source_file", F.col("_metadata.file_path")) \
-    .writeStream \
-    .outputMode("append") \
-    .option("checkpointLocation", bronze_checkpoint_path) \
-    .trigger(availableNow=True) \
-    .toTable(f"{catalog_name}.bronze.brz_{bronze_table_name}") \
-    .awaitTermination()
+
+print(catalog_name, storage_account_name, container_name)
+bronze_table_name = 'order_returns'
+adls_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{bronze_table_name}/landing/'
+bronze_checkpoint_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/checkpoint/bronze/fact_{bronze_table_name}/'
+print(adls_path, bronze_checkpoint_path)
+spark.readStream \
+.format("cloudFiles") \
+.option("cloudFiles.format", "csv")  \
+.option("cloudFiles.schemaLocation", bronze_checkpoint_path) \
+.option("cloudFiles.schemaEvolutionMode", "rescue") \
+.option("header", "true") \
+.option("cloudFiles.inferColumnTypes", "true") \
+.option("rescuedDataColumn", "_rescued_data") \
+.option("cloudFiles.includeExistingFiles", "true")  \
+.option("pathGlobFilter", "*.csv") \
+.load(adls_path) \
+.withColumn("ingest_timestamp", F.current_timestamp()) \
+.withColumn("source_file", F.col("_metadata.file_path")) \
+.writeStream \
+.outputMode("append") \
+.option("checkpointLocation", bronze_checkpoint_path) \
+.trigger(availableNow=True) \
+.toTable(f"{catalog_name}.bronze.brz_{bronze_table_name}") \
+.awaitTermination()
 
 # COMMAND ----------
 
-read_data_from_landing_to_bronze('order_returns')
-read_data_from_landing_to_bronze('order_shipments')
+bronze_table_name = 'order_shipments'
+adls_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{bronze_table_name}/landing/'
+bronze_checkpoint_path = f'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/checkpoint/bronze/fact_{bronze_table_name}/'
+print(adls_path, bronze_checkpoint_path)
+spark.readStream \
+.format("cloudFiles") \
+.option("cloudFiles.format", "csv")  \
+.option("cloudFiles.schemaLocation", bronze_checkpoint_path) \
+.option("cloudFiles.schemaEvolutionMode", "rescue") \
+.option("header", "true") \
+.option("cloudFiles.inferColumnTypes", "true") \
+.option("rescuedDataColumn", "_rescued_data") \
+.option("cloudFiles.includeExistingFiles", "true")  \
+.option("pathGlobFilter", "*.csv") \
+.load(adls_path) \
+.withColumn("ingest_timestamp", F.current_timestamp()) \
+.withColumn("source_file", F.col("_metadata.file_path")) \
+.writeStream \
+.outputMode("append") \
+.option("checkpointLocation", bronze_checkpoint_path) \
+.trigger(availableNow=True) \
+.toTable(f"{catalog_name}.bronze.brz_{bronze_table_name}") \
+.awaitTermination()
 
 # COMMAND ----------
 
-display(spark.sql(f'SELECT max(order_dt) FROM {catalog_name}.bronze.brz_order_returns'))
+display(spark.sql(f'SELECT min(order_dt) FROM {catalog_name}.bronze.brz_order_returns'))
 
 # COMMAND ----------
 
-display(spark.sql(f'SELECT max(order_dt) FROM {catalog_name}.bronze.brz_order_shipments'))
+display(spark.sql(f'SELECT min(return_ts) FROM {catalog_name}.bronze.brz_order_returns'))
+
+# COMMAND ----------
+
+display(spark.sql(f'SELECT min(order_dt) FROM {catalog_name}.bronze.brz_order_shipments'))
